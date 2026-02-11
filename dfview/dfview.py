@@ -263,6 +263,9 @@ def _build_html(df, total_rows):
         let rectEndCell = null;
         let selectedCells = [];
         let rectMode = 'cell'; // 'cell', 'row', or 'col'
+        let rectDidDrag = false;
+        let rectDragStartX = 0;
+        let rectDragStartY = 0;
         const lastCol = headers.length - 1;
 
         // Store original order
@@ -483,7 +486,7 @@ def _build_html(df, total_rows):
                 if (e.target.classList.contains('filter-btn')) return;
                 e.preventDefault();
                 e.stopPropagation();
-                selectColumn(th.cellIndex);
+                toggleColumn(th.cellIndex);
             }});
 
             th.addEventListener('click', (e) => {{
@@ -543,28 +546,23 @@ def _build_html(df, total_rows):
                 clearSelection();
                 return;
             }}
-            // Copy rectangular selection
+            // Copy selected cells (rectangular or non-adjacent)
             if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedCells.length > 0) {{
                 e.preventDefault();
                 const visibleRows = getVisibleRows();
-                let minRow = Infinity, maxRow = -1, minCol = Infinity, maxCol = -1;
-                selectedCells.forEach(td => {{
-                    const rIdx = visibleRows.indexOf(td.parentElement);
-                    const cIdx = td.cellIndex;
-                    if (rIdx < minRow) minRow = rIdx;
-                    if (rIdx > maxRow) maxRow = rIdx;
-                    if (cIdx < minCol) minCol = cIdx;
-                    if (cIdx > maxCol) maxCol = cIdx;
+                const rowMap = new Map();
+                selectedCells.forEach(cell => {{
+                    const rIdx = visibleRows.indexOf(cell.parentElement);
+                    const cIdx = cell.cellIndex;
+                    if (!rowMap.has(rIdx)) rowMap.set(rIdx, []);
+                    rowMap.get(rIdx).push(cIdx);
                 }});
-                const lines = [];
-                for (let r = minRow; r <= maxRow; r++) {{
-                    const tr = visibleRows[r];
-                    const cells = [];
-                    for (let c = minCol; c <= maxCol; c++) {{
-                        cells.push(tr.children[c].textContent.trim());
-                    }}
-                    lines.push(cells.join('\\t'));
-                }}
+                const sortedRowKeys = Array.from(rowMap.keys()).sort((a, b) => a - b);
+                const lines = sortedRowKeys.map(rIdx => {{
+                    const tr = visibleRows[rIdx];
+                    const cols = rowMap.get(rIdx).sort((a, b) => a - b);
+                    return cols.map(c => tr.children[c].textContent.trim()).join('\\t');
+                }});
                 const text = lines.join('\\n');
                 const showCopied = () => {{
                     const orig = infoEl.textContent;
@@ -650,14 +648,42 @@ def _build_html(df, total_rows):
             }}
         }}
 
-        function selectColumn(colIdx) {{
-            clearSelection();
-            rectMode = 'col';
-            getVisibleRows().forEach(tr => {{
-                const td = tr.children[colIdx];
-                if (td) {{
-                    td.classList.add('cell-selected');
-                    selectedCells.push(td);
+        function toggleCell(coords) {{
+            const td = coords.row.children[coords.col];
+            if (!td) return;
+            if (td.classList.contains('cell-selected')) {{
+                td.classList.remove('cell-selected');
+                selectedCells = selectedCells.filter(c => c !== td);
+            }} else {{
+                td.classList.add('cell-selected');
+                selectedCells.push(td);
+            }}
+        }}
+
+        function toggleRow(tr) {{
+            const cells = Array.from(tr.children);
+            const allSelected = cells.every(c => c.classList.contains('cell-selected'));
+            cells.forEach(c => {{
+                if (allSelected) {{
+                    c.classList.remove('cell-selected');
+                    selectedCells = selectedCells.filter(s => s !== c);
+                }} else if (!c.classList.contains('cell-selected')) {{
+                    c.classList.add('cell-selected');
+                    selectedCells.push(c);
+                }}
+            }});
+        }}
+
+        function toggleColumn(colIdx) {{
+            const cells = getVisibleRows().map(tr => tr.children[colIdx]).filter(Boolean);
+            const allSelected = cells.every(c => c.classList.contains('cell-selected'));
+            cells.forEach(c => {{
+                if (allSelected) {{
+                    c.classList.remove('cell-selected');
+                    selectedCells = selectedCells.filter(s => s !== c);
+                }} else if (!c.classList.contains('cell-selected')) {{
+                    c.classList.add('cell-selected');
+                    selectedCells.push(c);
                 }}
             }});
         }}
@@ -671,15 +697,23 @@ def _build_html(df, total_rows):
             e.stopPropagation();
             rectMode = cell.tagName === 'TH' ? 'row' : 'cell';
             rectSelecting = true;
+            rectDidDrag = false;
+            rectDragStartX = e.clientX;
+            rectDragStartY = e.clientY;
             rectStartCell = getCellCoords(cell);
             rectEndCell = getCellCoords(cell);
-            document.body.classList.add('rect-selecting');
-            highlightRect(rectStartCell, rectEndCell);
         }});
 
         let rafPending = false;
         document.addEventListener('mousemove', (e) => {{
             if (!rectSelecting) return;
+            if (!rectDidDrag) {{
+                const dx = e.clientX - rectDragStartX;
+                const dy = e.clientY - rectDragStartY;
+                if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+                rectDidDrag = true;
+                document.body.classList.add('rect-selecting');
+            }}
             if (rafPending) return;
             rafPending = true;
             requestAnimationFrame(() => {{
@@ -697,6 +731,14 @@ def _build_html(df, total_rows):
             if (!rectSelecting) return;
             rectSelecting = false;
             document.body.classList.remove('rect-selecting');
+            if (!rectDidDrag) {{
+                // Click (no drag) — toggle cell or row
+                if (rectMode === 'row') {{
+                    toggleRow(rectStartCell.row);
+                }} else {{
+                    toggleCell(rectStartCell);
+                }}
+            }}
         }});
 
         document.addEventListener('mousedown', (e) => {{
