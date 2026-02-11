@@ -1,0 +1,57 @@
+[build-system]
+requires = [
+    "hatchling",
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "dfview"
+version = "0.1.0"
+license = "MIT"
+description = "View pandas DataFrames in a browser."
+readme = "README.md"
+keywords = [
+    "pandas",
+    "dataframe",
+    "browser",
+    "viewer",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: MIT License",
+]
+authors = [
+    { name = "Klemen Zaletelj" },
+]
+maintainers = [
+    { name = "Klemen Zaletelj" },
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "sphinx",
+    "build",
+    "tomli",
+    "tomli-w",
+    "ipykernel",
+    "jupyter-client",
+    "jupytext",
+    "pynvim",
+]
+
+[project.urls]
+homepage = "https://github.com/klemengit/dfview"
+source = "https://github.com/klemengit/dfview"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "dfview/*",
+]
