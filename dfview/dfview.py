@@ -225,12 +225,13 @@ def _build_html(df, total_rows):
     }}
     tbody tr:nth-child(even) {{ background: #f8f9fa; }}
     tbody tr:hover {{ background: #e8f4fe; }}
-    td.cell-selected {{
+    td.cell-selected, tbody th.cell-selected {{
         background: #cce5ff !important;
         outline: 1px solid #4a90d9;
         outline-offset: -1px;
     }}
-    tbody tr:hover td.cell-selected {{
+    tbody tr:hover td.cell-selected,
+    tbody tr:hover th.cell-selected {{
         background: #b3d7ff !important;
     }}
     body.rect-selecting {{
@@ -261,6 +262,8 @@ def _build_html(df, total_rows):
         let rectStartCell = null;
         let rectEndCell = null;
         let selectedCells = [];
+        let rectMode = 'cell'; // 'cell', 'row', or 'col'
+        const lastCol = headers.length - 1;
 
         // Store original order
         const rows = Array.from(tbody.querySelectorAll('tr'));
@@ -474,7 +477,17 @@ def _build_html(df, total_rows):
             handle.className = 'resize-handle';
             th.appendChild(handle);
 
+            th.addEventListener('mousedown', (e) => {{
+                if (!e.altKey) return;
+                if (e.target.classList.contains('resize-handle')) return;
+                if (e.target.classList.contains('filter-btn')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                selectColumn(th.cellIndex);
+            }});
+
             th.addEventListener('click', (e) => {{
+                if (e.altKey) return;
                 if (e.target.classList.contains('resize-handle')) return;
                 if (e.target.classList.contains('filter-btn')) return;
                 if (sortCol === i) {{
@@ -622,8 +635,9 @@ def _build_html(df, total_rows):
             if (startIdx === -1 || endIdx === -1) return;
             const rowMin = Math.min(startIdx, endIdx);
             const rowMax = Math.max(startIdx, endIdx);
-            const colMin = Math.min(startCoords.col, endCoords.col);
-            const colMax = Math.max(startCoords.col, endCoords.col);
+            let colMin = Math.min(startCoords.col, endCoords.col);
+            let colMax = Math.max(startCoords.col, endCoords.col);
+            if (rectMode === 'row') {{ colMin = 0; colMax = lastCol; }}
             for (let r = rowMin; r <= rowMax; r++) {{
                 const tr = visibleRows[r];
                 for (let c = colMin; c <= colMax; c++) {{
@@ -636,16 +650,29 @@ def _build_html(df, total_rows):
             }}
         }}
 
+        function selectColumn(colIdx) {{
+            clearSelection();
+            rectMode = 'col';
+            getVisibleRows().forEach(tr => {{
+                const td = tr.children[colIdx];
+                if (td) {{
+                    td.classList.add('cell-selected');
+                    selectedCells.push(td);
+                }}
+            }});
+        }}
+
         // --- Rectangular selection mouse handlers ---
         tbody.addEventListener('mousedown', (e) => {{
             if (!e.altKey) return;
-            const td = e.target.closest('td');
-            if (!td) return;
+            const cell = e.target.closest('td') || e.target.closest('th');
+            if (!cell || !tbody.contains(cell)) return;
             e.preventDefault();
             e.stopPropagation();
+            rectMode = cell.tagName === 'TH' ? 'row' : 'cell';
             rectSelecting = true;
-            rectStartCell = getCellCoords(td);
-            rectEndCell = getCellCoords(td);
+            rectStartCell = getCellCoords(cell);
+            rectEndCell = getCellCoords(cell);
             document.body.classList.add('rect-selecting');
             highlightRect(rectStartCell, rectEndCell);
         }});
@@ -658,9 +685,9 @@ def _build_html(df, total_rows):
             requestAnimationFrame(() => {{
                 rafPending = false;
                 const el = document.elementFromPoint(e.clientX, e.clientY);
-                const td = el && el.closest ? el.closest('td') : null;
-                if (td && tbody.contains(td)) {{
-                    rectEndCell = getCellCoords(td);
+                const cell = el && el.closest ? (el.closest('td') || el.closest('th')) : null;
+                if (cell && tbody.contains(cell)) {{
+                    rectEndCell = getCellCoords(cell);
                     highlightRect(rectStartCell, rectEndCell);
                 }}
             }});
